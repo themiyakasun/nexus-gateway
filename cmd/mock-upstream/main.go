@@ -13,10 +13,10 @@ import (
 type Response struct {
 	NodeID string        `json:"node_id"`
 	Hostname string 					`json:"hostname"`
-Timestamp string `json:"timestamp"`
-Method string `json:"method"`
-Path string `json:"path"`
-Headers map[string][]string `json:"headers"`
+	Timestamp string `json:"timestamp"`
+	Method string `json:"method"`
+	Path string `json:"path"`
+	Headers map[string][]string `json:"headers"`
 }
 
 func createServer(serverId string, port string){
