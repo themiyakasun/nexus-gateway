@@ -15,14 +15,21 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	handler, err := proxy.ReverseProxy("http://localhost:8081")
-	if err != nil {
-		log.Fatal(err)
+	pool := &proxy.ServerPool{}
+
+	for _, u := range cfg.Upstreams {
+		upstream, err := proxy.NewUpstream(u.URL)
+		if err != nil {
+			log.Fatalf("Invalid upstream URL %s: %v", u.URL, err)
+		}
+		pool.AddUpstream(upstream)
+		log.Printf("Added upstream: %s", u.URL)
 	}
 
-	log.Printf("Starting proxy on :%d", cfg.Server.Port)
+	addr := fmt.Sprintf(":%d", cfg.Server.Port)
+	log.Printf("Nexus gateway listening on %s...", addr)
 
-	if err := http.ListenAndServe(fmt.Sprintf(":%d", cfg.Server.Port), handler); err != nil {
-		log.Fatal(err)
+	if err := http.ListenAndServe(addr, pool); err != nil {
+		log.Fatalf("Server error: %v", err)
 	}
 }

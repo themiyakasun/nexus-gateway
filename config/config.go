@@ -6,11 +6,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type UpstreamConfig struct {
+    ID  string `yaml:"id"`
+    URL string `yaml:"url"`
+}
+
 type Config struct {
     Server struct {
         Port int `yaml:"port"`
     } `yaml:"server"`
-    Upstreams []string `yaml:"upstreams"`
+    Upstreams []UpstreamConfig `yaml:"upstreams"`
 }
 
 func LoadConfig(filepath string) (*Config, error) {

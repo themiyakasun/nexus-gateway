@@ -5,10 +5,7 @@ server:
 upstreams:
   - id: 'server-1'
     url: 'http://localhost:8081'
-    port: 8081
   - id: 'server-2'
     url: 'http://localhost:8082'
-    port: 8082
   - id: 'server-3'
     url: 'http://localhost:8083'
-    port: 8083
