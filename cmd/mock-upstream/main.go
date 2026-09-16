@@ -65,6 +65,7 @@ func createServer(serverId string, port string){
 }
 
 func main() {
+	
 
 	go createServer("server-1", "8081")
 	go createServer("server-2", "8082")
