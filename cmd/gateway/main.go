@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/themiyakasun/nexus-gateway/config"
 	"github.com/themiyakasun/nexus-gateway/internal/proxy"
@@ -25,6 +26,8 @@ func main() {
 		pool.AddUpstream(upstream)
 		log.Printf("Added upstream: %s", u.URL)
 	}
+
+	go pool.StartHealthCheck(5 * time.Second)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("Nexus gateway listening on %s...", addr)

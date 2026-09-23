@@ -72,9 +72,9 @@ func main() {
 	go createServer("server-3", "8083")
 
 	log.Println("Mock upstream cluster running:")
-	log.Println("  server-1 -> :8081")
-	log.Println("  server-2 -> :8082")
-	log.Println("  server-3 -> :8083")
+	log.Println("server-1 -> :8081")
+	log.Println("server-2 -> :8082")
+	log.Println("server-3 -> :8083")
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
