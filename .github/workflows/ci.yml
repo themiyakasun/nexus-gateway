@@ -1,0 +1,26 @@
+name: Gateway CI
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+    branches: ['main']
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.1'
+
+      - name: Run Unit Tests
+        run: go test -v ./..
+
+      - name: Build Gateway Binary
+        run: go build -o bin/gateway ./cmd/gateway

@@ -1,36 +1,45 @@
 package proxy
 
-import (
-	"io"
-	"net/http"
-	"net/http/httptest"
-	"testing"
-)
+import "testing"
 
-func TestReverseProxy (t *testing.T) {
- //Fake Backend
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Backend Response"))
-	}))
-	defer backend.Close()
 
-	proxyHandler, err := ReverseProxy(backend.URL)
-	if err != nil {
-		t.Fatalf("Failed to create proxy: %v", err)
+func TestRoundRobin(t *testing.T){
+	pool := &ServerPool{}
+	serverA, _ := NewUpstream("http://localhost:8081")
+	serverB, _ := NewUpstream("http://localhost:8083")
+
+	pool.AddUpstream(serverA)
+	pool.AddUpstream(serverB)
+
+	first := pool.GetNextBackend()
+	if first != serverA {
+		t.Errorf("Expected serverA on first request, but got %v", first.URL)
 	}
 
-	//Fake Request
-	req := httptest.NewRequest("GET", "http://my-proxy.com/", nil)
-	recorder := httptest.NewRecorder()
+	second := pool.GetNextBackend()
+	if second != serverB {
+		t.Errorf("Expected serverB on second request, but got %v", second.URL)
+	}
 
-	proxyHandler.ServeHTTP(recorder, req)
+	third := pool.GetNextBackend()
+	if third != serverA {
+		t.Errorf("Expected serverA on third request (wrap around), but got %v", third.URL)
+	}
+}
 
-	//Check Response
-	resp := recorder.Result()
-	defer resp.Body.Close()
+func TestSkipDeadBackend(t *testing.T) {
+	pool := &ServerPool{}
+	serverA, _ := NewUpstream("http://localhost:8081")
+	serverB, _ := NewUpstream("http://localhost:8082")
 
-	body, _ := io.ReadAll(resp.Body)
-	if string(body) != "Backend Response" {
-		t.Errorf("Expected 'Backend Response', got: %s", string(body))
+	pool.AddUpstream(serverA)
+	pool.AddUpstream(serverB)
+
+	serverA.SetAlive(false)
+
+	selected := pool.GetNextBackend()
+
+	if selected != serverB {
+		t.Errorf("Expected serverB because serverA is dead, but got %v", selected)
 	} 
 }
