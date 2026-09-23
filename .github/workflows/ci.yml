@@ -20,7 +20,7 @@ jobs:
           go-version: '1.27.1'
 
       - name: Run Unit Tests
-        run: go test -v ./..
+        run: go test -v ./...
 
       - name: Build Gateway Binary
         run: go build -o bin/gateway ./cmd/gateway
