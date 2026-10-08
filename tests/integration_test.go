@@ -67,3 +67,53 @@ func TestEvenDistributionRequests(t *testing.T) {
 	}
 }
 
+func TestConsistentHash_EndToEndStickness(t *testing.T) {
+	backend1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]string{"server": "backend-1"})
+	}))
+	defer backend1.Close()
+	backend2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]string{"server": "backend-2"})
+	}))
+	defer backend2.Close()
+
+	ring := proxy.NewHashRing(50)
+
+	u1, _ := proxy.NewUpstream(backend1.URL)
+	u2, _ := proxy.NewUpstream(backend2.URL)
+	ring.AddUpstream(u1)
+	ring.AddUpstream(u2)
+
+	pool := &proxy.ServerPool{
+		Stratergy: "consistent-hash",
+		Ring: ring,
+	}
+
+	gateway := httptest.NewServer(pool)
+	defer gateway.Close()
+
+	var originalTarget string
+
+	for i := 0; i < 10; i++ {
+		res, err := http.Get((gateway.URL))
+		if err != nil {
+			t.Fatalf("Request %d failed: %v", i+1, err)
+		}
+
+		var data map[string]string
+		json.NewDecoder(res.Body).Decode(&data)
+		res.Body.Close()
+
+		serverAnswered := data["server"]
+
+		if i == 0 {
+			originalTarget = serverAnswered
+			t.Logf("Initial sticky assignment: %s", originalTarget)
+			continue
+		}
+
+		if serverAnswered != originalTarget {
+			t.Fatalf("Stickiness broken! Request %d landed on %s instead of %s", i+1, serverAnswered, originalTarget)
+		}
+	}
+}

@@ -23,6 +23,7 @@ type ServerPool struct {
 	backends []*Upstream
 	current uint64
 	Stratergy string
+	Ring *HashRing
 }
 
 func NewUpstream(rawUrl string) (*Upstream, error) {
@@ -97,12 +98,15 @@ func (s *ServerPool) GetNextBackend() *Upstream {
 func (s *ServerPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var target *Upstream
 
-	if s.Stratergy == "least-conn" {
+	switch s.Stratergy {
+	case "least-conn":
 		target = s.GetLeastConnectedBackend()
-	} else {
+	case "consistent-hash":
+		clientIP := r.RemoteAddr
+		target = s.Ring.Get(clientIP)
+	default:
 		target = s.GetNextBackend()
 	}
-
 
 	if target == nil {
 		http.Error(w, "Service Unavailable: No backends configured", http.StatusServiceUnavailable)

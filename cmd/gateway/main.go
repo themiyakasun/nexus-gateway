@@ -16,14 +16,17 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	pool := &proxy.ServerPool{}
+	pool := &proxy.ServerPool{
+		Stratergy: "consistent-hash",
+		Ring: proxy.NewHashRing(50),
+	}
 
 	for _, u := range cfg.Upstreams {
 		upstream, err := proxy.NewUpstream(u.URL)
 		if err != nil {
 			log.Fatalf("Invalid upstream URL %s: %v", u.URL, err)
 		}
-		pool.AddUpstream(upstream)
+		pool.Ring.AddUpstream(upstream)
 		log.Printf("Added upstream: %s", u.URL)
 	}
 
