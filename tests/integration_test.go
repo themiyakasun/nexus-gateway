@@ -30,6 +30,8 @@ func TestEvenDistributionRequests(t *testing.T) {
 	u2, _ := proxy.NewUpstream(backend2.URL)
 	u3, _ := proxy.NewUpstream(backend3.URL)
 
+	pool.Stratergy = "round-robin"
+
 	pool.AddUpstream(u1)
 	pool.AddUpstream(u2)
 	pool.AddUpstream(u3)
