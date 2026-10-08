@@ -40,6 +40,11 @@ func NewUpstream(rawUrl string, c *cache.LRUCache) (*Upstream, error) {
 	proxy := httputil.NewSingleHostReverseProxy(parsedUrl)
 
 	proxy.ModifyResponse = func(resp *http.Response) error {
+
+		if c == nil {
+			return nil
+		}
+
 		if resp.Request.Method != http.MethodGet {
 			return nil
 		}
