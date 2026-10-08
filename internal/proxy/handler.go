@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"log"
+	"math"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 type Upstream struct {
 	URL *url.URL
 	Alive bool
+	ActiveConnections int64
 	ReverseProxy *httputil.ReverseProxy
 	mux sync.RWMutex
 }
@@ -49,6 +51,24 @@ func (u *Upstream) IsAlive() bool {
 	return alive
 }
 
+func (s *ServerPool) GetLeastConnectedBackend() *Upstream {
+	var bestBackend *Upstream
+	var minConnections int64 = math.MaxInt64
+
+	for _, backend := range s.backends {
+		if !backend.IsAlive() {
+			continue
+		}
+
+		conns := atomic.LoadInt64(&backend.ActiveConnections)
+		if conns < minConnections {
+			minConnections = conns
+			bestBackend = backend
+		}
+	}
+	return bestBackend
+}
+
 func (s *ServerPool) AddUpstream(upstream *Upstream){
 	s.backends = append(s.backends, upstream)
 }
@@ -74,12 +94,16 @@ func (s *ServerPool) GetNextBackend() *Upstream {
 }
 
 func (s *ServerPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	target := s.GetNextBackend()
+	target := s.GetLeastConnectedBackend()
 
 	if target == nil {
 		http.Error(w, "Service Unavailable: No backends configured", http.StatusServiceUnavailable)
 		return
 	}
+
+	atomic.AddInt64(&target.ActiveConnections, 1)
+
+	defer atomic.AddInt64(&target.ActiveConnections, -1)
 
 	target.ReverseProxy.ServeHTTP(w, r)
 }
