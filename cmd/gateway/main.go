@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/themiyakasun/nexus-gateway/config"
+	"github.com/themiyakasun/nexus-gateway/internal/cache"
 	"github.com/themiyakasun/nexus-gateway/internal/proxy"
 )
 
@@ -16,13 +17,16 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
+	lruCache := cache.NewLRUCache(1000)
+
 	pool := &proxy.ServerPool{
 		Stratergy: "consistent-hash",
 		Ring: proxy.NewHashRing(50),
+		Cache: lruCache,
 	}
 
 	for _, u := range cfg.Upstreams {
-		upstream, err := proxy.NewUpstream(u.URL)
+		upstream, err := proxy.NewUpstream(u.URL, lruCache)
 		if err != nil {
 			log.Fatalf("Invalid upstream URL %s: %v", u.URL, err)
 		}

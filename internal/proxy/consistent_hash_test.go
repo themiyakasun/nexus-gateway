@@ -8,9 +8,9 @@ import (
 func TestConsistentHash_Stickiness(t *testing.T) {
 	ring := NewHashRing(50)
 
-	s1, _ := NewUpstream("http://localhost:8081")
-	s2, _ := NewUpstream("http://localhost:8082")
-	s3, _ := NewUpstream("http://localhost:8083")
+	s1, _ := NewUpstream("http://localhost:8081", nil)
+	s2, _ := NewUpstream("http://localhost:8082", nil)
+	s3, _ := NewUpstream("http://localhost:8083", nil)
 
 	ring.AddUpstream(s1)
 	ring.AddUpstream(s2)
@@ -35,9 +35,9 @@ func TestConsistentHash_Distribution(t *testing.T) {
 	ring := NewHashRing(50)
 
 
-	s1, _ := NewUpstream("http://localhost:8081")
-	s2, _ := NewUpstream("http://localhost:8082")
-	s3, _ := NewUpstream("http://localhost:8083")
+	s1, _ := NewUpstream("http://localhost:8081", nil)
+	s2, _ := NewUpstream("http://localhost:8082", nil)
+	s3, _ := NewUpstream("http://localhost:8083", nil)
 
 	ring.AddUpstream(s1)
 	ring.AddUpstream(s2)
@@ -65,8 +65,8 @@ func TestConsistentHash_Distribution(t *testing.T) {
 func TestConsistentHash_Failover(t *testing.T) {
 	ring := NewHashRing(50)
 
-		s1, _ := NewUpstream("http://localhost:8081")
-	 s2, _ := NewUpstream("http://localhost:8082")
+		s1, _ := NewUpstream("http://localhost:8081", nil)
+	 s2, _ := NewUpstream("http://localhost:8082", nil)
 
 		ring.AddUpstream(s1)
 		ring.AddUpstream(s2)

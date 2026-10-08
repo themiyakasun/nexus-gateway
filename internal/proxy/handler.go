@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"bytes"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -9,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/themiyakasun/nexus-gateway/internal/cache"
 )
 
 type Upstream struct {
@@ -24,18 +28,44 @@ type ServerPool struct {
 	current uint64
 	Stratergy string
 	Ring *HashRing
+	Cache *cache.LRUCache
 }
 
-func NewUpstream(rawUrl string) (*Upstream, error) {
+func NewUpstream(rawUrl string, c *cache.LRUCache) (*Upstream, error) {
 	parsedUrl, err := url.Parse(rawUrl)
 	if err != nil {
 		return nil, err
 	}
 
+	proxy := httputil.NewSingleHostReverseProxy(parsedUrl)
+
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		if resp.Request.Method != http.MethodGet {
+			return nil
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil
+		}
+
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+
+		cacheKey := resp.Request.URL.Path
+		c.Put(cacheKey, bodyBytes, 30*time.Second)
+
+		resp.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+		return nil
+	}
+
 	return &Upstream{
 		URL: parsedUrl,
 		Alive: true,
-		ReverseProxy: httputil.NewSingleHostReverseProxy(parsedUrl),
+		ReverseProxy: proxy,
 	}, nil
 
 }
@@ -96,6 +126,21 @@ func (s *ServerPool) GetNextBackend() *Upstream {
 }
 
 func (s *ServerPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.Cache != nil 	&& r.Method == http.MethodGet{
+		cacheKey := r.URL.Path
+
+		if cachedData, found := s.Cache.Get(cacheKey); found {
+			w.Header().Set("X-Cache", "HIT")
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write(cachedData)
+			return
+		}
+	}
+
+	w.Header().Set("X-Cache", "MISS")
+
+
 	var target *Upstream
 
 	switch s.Stratergy {

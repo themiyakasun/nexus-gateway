@@ -8,8 +8,8 @@ import (
 
 func TestRoundRobin(t *testing.T){
 	pool := &ServerPool{}
-	serverA, _ := NewUpstream("http://localhost:8081")
-	serverB, _ := NewUpstream("http://localhost:8083")
+	serverA, _ := NewUpstream("http://localhost:8081", nil)
+	serverB, _ := NewUpstream("http://localhost:8083", nil)
 
 	pool.AddUpstream(serverA)
 	pool.AddUpstream(serverB)
@@ -32,8 +32,8 @@ func TestRoundRobin(t *testing.T){
 
 func TestSkipDeadBackend(t *testing.T) {
 	pool := &ServerPool{}
-	serverA, _ := NewUpstream("http://localhost:8081")
-	serverB, _ := NewUpstream("http://localhost:8082")
+	serverA, _ := NewUpstream("http://localhost:8081", nil)
+	serverB, _ := NewUpstream("http://localhost:8082", nil)
 
 	pool.AddUpstream(serverA)
 	pool.AddUpstream(serverB)
@@ -50,9 +50,9 @@ func TestSkipDeadBackend(t *testing.T) {
 func TestGetLeastConnectedBackend(t *testing.T) {
 	pool := &ServerPool{}
 
-	s1, _ := NewUpstream("http://localhost:8081")
-	s2, _ := NewUpstream("http://localhost:8082")
-	s3, _ := NewUpstream("http://localhost:8083")
+	s1, _ := NewUpstream("http://localhost:8081", nil)
+	s2, _ := NewUpstream("http://localhost:8082", nil)
+	s3, _ := NewUpstream("http://localhost:8083", nil)
 
 	atomic.StoreInt64(&s1.ActiveConnections, 5)
 	atomic.StoreInt64(&s2.ActiveConnections, 1)
@@ -72,8 +72,8 @@ func TestGetLeastConnectedBackend(t *testing.T) {
 func TestLeastConnection_SkipsDeadBackend(t *testing.T) {
 	pool := &ServerPool{}
 
-	s1, _ := NewUpstream("http://localhost:8081")
-	s2, _ := NewUpstream("http://localhost:8082")
+	s1, _ := NewUpstream("http://localhost:8081", nil)
+	s2, _ := NewUpstream("http://localhost:8082", nil)
 
 	atomic.StoreInt64(&s1.ActiveConnections, 0)
 	s1.SetAlive(false)

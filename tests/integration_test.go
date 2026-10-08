@@ -26,9 +26,9 @@ func TestEvenDistributionRequests(t *testing.T) {
 	defer backend3.Close()
 
 	pool := &proxy.ServerPool{}
-	u1, _ := proxy.NewUpstream(backend1.URL)
-	u2, _ := proxy.NewUpstream(backend2.URL)
-	u3, _ := proxy.NewUpstream(backend3.URL)
+	u1, _ := proxy.NewUpstream(backend1.URL, nil)
+	u2, _ := proxy.NewUpstream(backend2.URL, nil)
+	u3, _ := proxy.NewUpstream(backend3.URL, nil)
 
 	pool.Stratergy = "round-robin"
 
@@ -79,8 +79,8 @@ func TestConsistentHash_EndToEndStickness(t *testing.T) {
 
 	ring := proxy.NewHashRing(50)
 
-	u1, _ := proxy.NewUpstream(backend1.URL)
-	u2, _ := proxy.NewUpstream(backend2.URL)
+	u1, _ := proxy.NewUpstream(backend1.URL, nil)
+	u2, _ := proxy.NewUpstream(backend2.URL, nil)
 	ring.AddUpstream(u1)
 	ring.AddUpstream(u2)
 
