@@ -26,6 +26,13 @@ func main() {
 	validRoutes.Add("/health")
 	validRoutes.Add("/products")
 
+	db := middleware.NewMockDatabase()
+
+	apiKeyFilter := filter.NewBloomFilter(10000, 3)
+
+	apiKeyFilter.Add("sk_live_alice_123")
+	apiKeyFilter.Add("sk_live_bob_456")
+
 	pool := &proxy.ServerPool{
 		Stratergy: "consistent-hash",
 		Ring: proxy.NewHashRing(50),
@@ -47,9 +54,11 @@ func main() {
 
 	go pool.StartHealthCheck(5 * time.Second)
 
-	handlerWithFilter := middleware.BloomFilterMiddleware(validRoutes, pool)
+	hRouteCheck := middleware.BloomFilterMiddleware(validRoutes, pool)
 
-	finalHandler := middleware.GzipMiddleware(handlerWithFilter)
+	hAuthCheck := middleware.APIKeyAuthMiddleware(apiKeyFilter, db, hRouteCheck)
+
+	finalHandler := middleware.GzipMiddleware(hAuthCheck)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("Nexus gateway listening on %s...", addr)
