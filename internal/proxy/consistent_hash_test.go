@@ -86,3 +86,41 @@ func TestConsistentHash_Failover(t *testing.T) {
 			t.Fatalf("Ring routed to dead server %s!", firstChoice.URL)
 		}
 }
+
+func TestConsistentHash_RemoveNodeRebalance(t *testing.T) {
+	ring := NewHashRing(50)
+
+	nodeA, _ := NewUpstream("http://localhost:8081", nil)
+	nodeB, _ := NewUpstream("http://localhost:8082", nil)
+	nodeC, _ := NewUpstream("http://localhost:8083", nil)
+
+	ring.AddUpstream(nodeA)
+	ring.AddUpstream(nodeB)
+	ring.AddUpstream(nodeC)
+
+	totalKeys := 10000
+	initialMapping := make(map[string]*Upstream)
+
+	for i := 0; i < totalKeys; i++ {
+		key := fmt.Sprintf("user_session_%d", i)
+		initialMapping[key] = ring.Get(key)
+	}
+
+	ring.RemoveUpstream(nodeC)
+
+	unnecessaryMoves := 0
+
+	for key, originalServer := range initialMapping {
+		newServer := ring.Get(key)
+		
+		if (originalServer == nodeA && newServer != nodeA) || (originalServer == nodeB && newServer != nodeB) {
+						unnecessaryMoves++
+		}
+	}
+
+	t.Logf("Unnecessary key migrations between unaffected nodes: %d", unnecessaryMoves)
+
+	if unnecessaryMoves != 0 {
+		t.Errorf("Monotonicity violation! %d keys moved between healthy nodes!", unnecessaryMoves)
+	}
+}

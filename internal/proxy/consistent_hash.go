@@ -39,6 +39,22 @@ func (h *HashRing) AddUpstream(upstream *Upstream){
 	})
 }
 
+func (h *HashRing) RemoveUpstream(upstream *Upstream) {
+	h.mux.Lock()
+	defer h.mux.Unlock()
+
+	newKeys := make([]uint32, 0, len(h.keys))
+	for _, point := range h.keys {
+		if h.ring[point] == upstream {
+			delete(h.ring, point)
+		}else {
+			newKeys = append(newKeys, point)
+		}
+	}
+
+	h.keys = newKeys
+}
+
 func (h *HashRing) Get(key string) *Upstream {
 	h.mux.RLock()
 	defer h.mux.RUnlock()
