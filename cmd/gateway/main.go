@@ -8,6 +8,7 @@ import (
 
 	"github.com/themiyakasun/nexus-gateway/config"
 	"github.com/themiyakasun/nexus-gateway/internal/cache"
+	"github.com/themiyakasun/nexus-gateway/internal/middleware"
 	"github.com/themiyakasun/nexus-gateway/internal/proxy"
 )
 
@@ -36,10 +37,12 @@ func main() {
 
 	go pool.StartHealthCheck(5 * time.Second)
 
+	handlerWithGzip := middleware.GzipMiddleware(pool)
+
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("Nexus gateway listening on %s...", addr)
 
-	if err := http.ListenAndServe(addr, pool); err != nil {
+	if err := http.ListenAndServe(addr, handlerWithGzip); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
 }
