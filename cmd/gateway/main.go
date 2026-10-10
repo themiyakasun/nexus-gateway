@@ -8,6 +8,7 @@ import (
 
 	"github.com/themiyakasun/nexus-gateway/config"
 	"github.com/themiyakasun/nexus-gateway/internal/cache"
+	"github.com/themiyakasun/nexus-gateway/internal/filter"
 	"github.com/themiyakasun/nexus-gateway/internal/middleware"
 	"github.com/themiyakasun/nexus-gateway/internal/proxy"
 )
@@ -19,6 +20,11 @@ func main() {
 	}
 
 	lruCache := cache.NewLRUCache(1000)
+	validRoutes := filter.NewBloomFilter(10000, 3)
+
+	validRoutes.Add("/")
+	validRoutes.Add("/health")
+	validRoutes.Add("/products")
 
 	pool := &proxy.ServerPool{
 		Stratergy: "consistent-hash",
@@ -26,23 +32,29 @@ func main() {
 		Cache: lruCache,
 	}
 
+
 	for _, u := range cfg.Upstreams {
 		upstream, err := proxy.NewUpstream(u.URL, lruCache)
 		if err != nil {
 			log.Fatalf("Invalid upstream URL %s: %v", u.URL, err)
 		}
+
 		pool.Ring.AddUpstream(upstream)
 		log.Printf("Added upstream: %s", u.URL)
 	}
 
+	
+
 	go pool.StartHealthCheck(5 * time.Second)
 
-	handlerWithGzip := middleware.GzipMiddleware(pool)
+	handlerWithFilter := middleware.BloomFilterMiddleware(validRoutes, pool)
+
+	finalHandler := middleware.GzipMiddleware(handlerWithFilter)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("Nexus gateway listening on %s...", addr)
 
-	if err := http.ListenAndServe(addr, handlerWithGzip); err != nil {
+	if err := http.ListenAndServe(addr, finalHandler); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
 }
