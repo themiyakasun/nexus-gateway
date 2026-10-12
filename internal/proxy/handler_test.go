@@ -90,3 +90,4 @@ func TestLeastConnection_SkipsDeadBackend(t *testing.T) {
 		t.Errorf("Expected Server 2 because Server 1 is dead, but got %v", selected.URL)
 	}
 }
+

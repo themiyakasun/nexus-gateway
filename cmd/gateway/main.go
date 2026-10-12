@@ -11,6 +11,7 @@ import (
 	"github.com/themiyakasun/nexus-gateway/internal/filter"
 	"github.com/themiyakasun/nexus-gateway/internal/middleware"
 	"github.com/themiyakasun/nexus-gateway/internal/proxy"
+	"github.com/themiyakasun/nexus-gateway/internal/ratelimit"
 )
 
 func main() {
@@ -32,6 +33,8 @@ func main() {
 
 	apiKeyFilter.Add("sk_live_alice_123")
 	apiKeyFilter.Add("sk_live_bob_456")
+
+	ipLimiter := ratelimit.NewIPRateLimiter(5, 2)
 
 	pool := &proxy.ServerPool{
 		Stratergy: "consistent-hash",
@@ -58,7 +61,9 @@ func main() {
 
 	hAuthCheck := middleware.APIKeyAuthMiddleware(apiKeyFilter, db, hRouteCheck)
 
-	finalHandler := middleware.GzipMiddleware(hAuthCheck)
+	hRate := middleware.RateLimitMiddleware(ipLimiter, hAuthCheck)
+
+	finalHandler := middleware.GzipMiddleware(hRate)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("Nexus gateway listening on %s...", addr)
