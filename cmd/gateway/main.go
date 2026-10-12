@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/themiyakasun/nexus-gateway/config"
 	"github.com/themiyakasun/nexus-gateway/internal/cache"
 	"github.com/themiyakasun/nexus-gateway/internal/filter"
@@ -36,6 +37,10 @@ func main() {
 
 	ipLimiter := ratelimit.NewIPRateLimiter(5, 2)
 
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+
 	pool := &proxy.ServerPool{
 		Stratergy: "consistent-hash",
 		Ring: proxy.NewHashRing(50),
@@ -61,9 +66,13 @@ func main() {
 
 	hAuthCheck := middleware.APIKeyAuthMiddleware(apiKeyFilter, db, hRouteCheck)
 
-	hRate := middleware.RateLimitMiddleware(ipLimiter, hAuthCheck)
+	disLimiter := ratelimit.NewRedisSlidingWindowLimiter(rdb, 1*time.Minute, 10)
 
-	finalHandler := middleware.GzipMiddleware(hRate)
+	hDistRate := middleware.DistributedRateLimitMiddleware(disLimiter, hAuthCheck)
+
+	hLocalRate := middleware.RateLimitMiddleware(ipLimiter, hDistRate)
+
+	finalHandler := middleware.GzipMiddleware(hLocalRate)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("Nexus gateway listening on %s...", addr)
