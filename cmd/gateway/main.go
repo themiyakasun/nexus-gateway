@@ -1,13 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
 	"github.com/themiyakasun/nexus-gateway/config"
 	"github.com/themiyakasun/nexus-gateway/internal/cache"
@@ -30,7 +29,7 @@ func main() {
 	validRoutes.Add("/health")
 	validRoutes.Add("/products")
 
-	db := middleware.NewMockDatabase()
+	// db := middleware.NewMockDatabase()
 
 	apiKeyFilter := filter.NewBloomFilter(10000, 3)
 
@@ -39,12 +38,17 @@ func main() {
 
 	ipLimiter := ratelimit.NewIPRateLimiter(5, 2)
 
-	pemBytes, _ := os.ReadFile("public.pem")
-	publicKey, _ := jwt.ParseRSAPrivateKeyFromPEM(pemBytes)
+
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
 	})
+
+	ctx := context.Background()
+
+	rdb.SAdd(ctx, "valid_api_keys", "sk_live_alice_123", "sk_live_bob_456")
+	log.Println("Seeded Redis Set 'valid_api_keys' with active customer keys.")
+
 
 	pool := &proxy.ServerPool{
 		Stratergy: "consistent-hash",
@@ -68,17 +72,17 @@ func main() {
 	go pool.StartHealthCheck(5 * time.Second)
 
 	hRouteCheck := middleware.BloomFilterMiddleware(validRoutes, pool)
+	// Station 3: Redis Set API Key Auth (Validates X-API-Key & Bearer against Redis)
+	hAPIKey := middleware.RedisAPIKeyMiddleware(rdb, "valid_api_keys", hRouteCheck)
 
-	hJwt := middleware.JWTMiddleware(&publicKey.PublicKey, hRouteCheck)
-
-	hAuthCheck := middleware.APIKeyAuthMiddleware(apiKeyFilter, db, hJwt)
+	// hAuthCheck := middleware.APIKeyAuthMiddleware(apiKeyFilter, db, hAPIKey)
 
 	disLimiter := ratelimit.NewRedisSlidingWindowLimiter(rdb, 1*time.Minute, 10)
 
-	hDistRate := middleware.DistributedRateLimitMiddleware(disLimiter, hAuthCheck)
-
+	hDistRate := middleware.DistributedRateLimitMiddleware(disLimiter, hAPIKey)
+	// Station 2A: Local In-Memory Burst Limiter (5 req/sec)
 	hLocalRate := middleware.RateLimitMiddleware(ipLimiter, hDistRate)
-
+	// Station 1: Gzip Compression on the outside
 	finalHandler := middleware.GzipMiddleware(hLocalRate)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
