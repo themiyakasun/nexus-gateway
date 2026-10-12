@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
 	"github.com/themiyakasun/nexus-gateway/config"
 	"github.com/themiyakasun/nexus-gateway/internal/cache"
@@ -37,6 +39,9 @@ func main() {
 
 	ipLimiter := ratelimit.NewIPRateLimiter(5, 2)
 
+	pemBytes, _ := os.ReadFile("public.pem")
+	publicKey, _ := jwt.ParseRSAPrivateKeyFromPEM(pemBytes)
+
 	rdb := redis.NewClient(&redis.Options{
 		Addr: "localhost:6379",
 	})
@@ -64,7 +69,9 @@ func main() {
 
 	hRouteCheck := middleware.BloomFilterMiddleware(validRoutes, pool)
 
-	hAuthCheck := middleware.APIKeyAuthMiddleware(apiKeyFilter, db, hRouteCheck)
+	hJwt := middleware.JWTMiddleware(&publicKey.PublicKey, hRouteCheck)
+
+	hAuthCheck := middleware.APIKeyAuthMiddleware(apiKeyFilter, db, hJwt)
 
 	disLimiter := ratelimit.NewRedisSlidingWindowLimiter(rdb, 1*time.Minute, 10)
 
