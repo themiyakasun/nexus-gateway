@@ -112,7 +112,7 @@ func (cb *CircuitBreaker) Allow() bool {
 		return false
 
 	case StateHalfOpen:
-		return true
+		return false
 
 	default:
 		return false

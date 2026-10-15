@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"log"
 	"math"
@@ -188,6 +189,11 @@ func (s *ServerPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	atomic.AddInt64(&target.ActiveConnections, 1)
 
 	defer atomic.AddInt64(&target.ActiveConnections, -1)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	r = r.WithContext(ctx)
 
 	target.ReverseProxy.ServeHTTP(w, r)
 }
