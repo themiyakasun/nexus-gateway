@@ -15,6 +15,11 @@ type Config struct {
     Server struct {
         Port int `yaml:"port"`
     } `yaml:"server"`
+
+    Database struct {
+        URL string `yaml:"url"`
+    } `yaml:"database"`
+
     Upstreams []UpstreamConfig `yaml:"upstreams"`
 }
 

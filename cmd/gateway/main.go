@@ -10,6 +10,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/themiyakasun/nexus-gateway/config"
 	"github.com/themiyakasun/nexus-gateway/internal/cache"
+	"github.com/themiyakasun/nexus-gateway/internal/database"
 	"github.com/themiyakasun/nexus-gateway/internal/filter"
 	"github.com/themiyakasun/nexus-gateway/internal/middleware"
 	"github.com/themiyakasun/nexus-gateway/internal/proxy"
@@ -20,6 +21,16 @@ func main() {
 	cfg, err := config.LoadConfig("config.yaml")
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
+	}
+	
+	db, err := database.Connect(cfg.Database.URL)
+	if err != nil {
+		log.Fatalf("Database connection failed: %v", err)
+	}
+	defer db.Close()
+
+	if err := database.AutoMigrate(db); err != nil {
+		log.Fatalf("Database migration failed: %v", err)
 	}
 
 	lruCache := cache.NewLRUCache(1000)
