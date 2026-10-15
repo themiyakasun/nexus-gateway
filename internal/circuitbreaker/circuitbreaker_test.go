@@ -5,26 +5,32 @@ import (
 	"time"
 )
 
-func TestCircuitBreaker_FullLifecyle(t *testing.T) {
-	cb := NewCircuitBreaker(3, 100*time.Millisecond)
+func TestRateCircuitBreaker(t *testing.T) {
+	cb := NewCircuitBreaker(10*time.Second, 0.50, 6, 100*time.Millisecond)
+
+	cb.RecordFailure()
+	cb.RecordFailure()
 
 	if cb.State() != StateClosed {
-		t.Fatalf("Expected initial state CLOSED, got %s", cb.state)
+		t.Fatalf("Should stay CLOSED because minRequests (6) not reached, got %s", cb.State())
 	}
+
+	cb.RecordSuccess()
+	cb.RecordSuccess()
+	cb.RecordSuccess()
+	cb.RecordSuccess()
 
 	cb.RecordFailure()
 	cb.RecordFailure()
-	if cb.State() != StateClosed {
-		t.Fatalf("Expected state to stay CLOSED after 2 failures, got %s", cb.State())
-	}
-
 	cb.RecordFailure()
+	cb.RecordFailure()
+
 	if cb.State() != StateOpen {
-		t.Fatalf("Expected state to TRIP to OPEN, got %s", cb.State())
+		t.Fatalf("Expected breaker to TRIP to OPEN at 60%% failure rate, got %s", cb.State())
 	}
 
 	if cb.Allow() {
-		t.Fatalf("Expected Allow() to be FALSE while breaker is OPEN")
+		t.Fatalf("Expected Allow() to be False while OPEN")
 	}
 
 	time.Sleep(120 * time.Millisecond)
@@ -32,12 +38,13 @@ func TestCircuitBreaker_FullLifecyle(t *testing.T) {
 	if !cb.Allow() {
 		t.Fatalf("Expected Allow() to be TRUE for canary probe")
 	}
+
 	if cb.State() != StateHalfOpen {
-		t.Fatalf("Expected state to be HALF-OPEN, got %s", cb.State())
+		t.Fatalf("Expected HALF-OPEN, got %s", cb.State())
 	}
 
 	cb.RecordSuccess()
 	if cb.State() != StateClosed {
-		t.Fatalf("Expected state to reset to CLOSED, got %s", cb.State())
+		t.Fatalf("Expected state to recover to CLOSED, got %s", cb.State())
 	}
 }
