@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/themiyakasun/nexus-gateway/internal/cache"
+	"github.com/themiyakasun/nexus-gateway/internal/circuitbreaker"
 )
 
 type Upstream struct {
@@ -20,6 +21,7 @@ type Upstream struct {
 	Alive bool
 	ActiveConnections int64
 	ReverseProxy *httputil.ReverseProxy
+	CircuitBreaker *circuitbreaker.CircuitBreaker
 	mux sync.RWMutex
 }
 
@@ -33,6 +35,8 @@ type ServerPool struct {
 
 func NewUpstream(rawUrl string, c *cache.LRUCache) (*Upstream, error) {
 	parsedUrl, err := url.Parse(rawUrl)
+	cb := circuitbreaker.NewCircuitBreaker(10*time.Second, 0.50, 4, 5*time.Second)
+
 	if err != nil {
 		return nil, err
 	}
@@ -40,6 +44,12 @@ func NewUpstream(rawUrl string, c *cache.LRUCache) (*Upstream, error) {
 	proxy := httputil.NewSingleHostReverseProxy(parsedUrl)
 
 	proxy.ModifyResponse = func(resp *http.Response) error {
+
+		if resp.StatusCode >= 500 {
+			cb.RecordFailure()
+		} else {
+			cb.RecordSuccess()
+		}
 
 		if c == nil {
 			return nil
@@ -67,10 +77,16 @@ func NewUpstream(rawUrl string, c *cache.LRUCache) (*Upstream, error) {
 		return nil
 	}
 
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		cb.RecordFailure()
+		w.WriteHeader(http.StatusBadGateway)
+	}
+
 	return &Upstream{
 		URL: parsedUrl,
 		Alive: true,
 		ReverseProxy: proxy,
+		CircuitBreaker: cb,
 	}, nil
 
 }
@@ -160,6 +176,12 @@ func (s *ServerPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if target == nil {
 		http.Error(w, "Service Unavailable: No backends configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	if target.CircuitBreaker != nil && !target.CircuitBreaker.Allow() {
+		w.Header().Set("X-Circuit-Breaker", "OPEN")
+		http.Error(w, "503 Service Unavailable (Circuit Breaker OPEN - Failing Fast)", http.StatusServiceUnavailable)
 		return
 	}
 
