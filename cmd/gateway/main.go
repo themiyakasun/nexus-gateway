@@ -9,6 +9,7 @@ import (
 
 	"github.com/redis/go-redis/v9"
 	"github.com/themiyakasun/nexus-gateway/config"
+	"github.com/themiyakasun/nexus-gateway/internal/admin"
 	"github.com/themiyakasun/nexus-gateway/internal/cache"
 	"github.com/themiyakasun/nexus-gateway/internal/database"
 	"github.com/themiyakasun/nexus-gateway/internal/filter"
@@ -32,6 +33,8 @@ func main() {
 	if err := database.AutoMigrate(db); err != nil {
 		log.Fatalf("Database migration failed: %v", err)
 	}
+
+
 
 	lruCache := cache.NewLRUCache(1000)
 	validRoutes := filter.NewBloomFilter(10000, 3)
@@ -96,10 +99,18 @@ func main() {
 	// Station 1: Gzip Compression on the outside
 	finalHandler := middleware.GzipMiddleware(hLocalRate)
 
+	adminRepo := admin.NewRepository(db)
+	adminHandler := admin.NewHandler(adminRepo)
+
+	rootMux := http.NewServeMux()
+	adminHandler.RegisterRoutes(rootMux)
+
+	rootMux.Handle("/", finalHandler)
+
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("Nexus gateway listening on %s...", addr)
 
-	if err := http.ListenAndServe(addr, finalHandler); err != nil {
+	if err := http.ListenAndServe(addr, rootMux); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
 }
