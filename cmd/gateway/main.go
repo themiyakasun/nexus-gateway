@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -36,10 +39,15 @@ func main() {
 		log.Fatalf("Database migration failed: %v", err)
 	}
 
-
-
 	lruCache := cache.NewLRUCache(1000)
 	validRoutes := filter.NewBloomFilter(10000, 3)
+	initialTable, err := database.RebuildRoutingTable(context.Background(), db, lruCache)
+	if err != nil {
+		log.Printf("Warning: failed initial routing table load: %v", err)
+		initialTable = proxy.NewRoutingTable(nil)
+	}
+
+	atomicRouter := proxy.NewAtomicRouter(initialTable)
 
 	validRoutes.Add("/")
 	validRoutes.Add("/health")
@@ -110,21 +118,17 @@ func main() {
 		log.Printf("[CLUSTER SYNC] Received event: %s at %s", event.Type, event.Timestamp.Format(time.RFC3339))
 
 		switch event.Type {
-		case events.EventRouteCreated:
-			var rt admin.Route
-			if err := json.Unmarshal(event.Payload, &rt); err != nil {
-				validRoutes.Add(rt.PathPrefix)
-				log.Printf("[CLUSTER SYNC] Route '%s' added to in-memory Bloom Filter", rt.PathPrefix)
+		case events.EventRouteCreated, events.EventRouteDeleted, events.EventServiceCreated, events.EventServiceDeleted:
+			log.Println("[RCU UPDATE] Rebuilding routing table from database...")
+
+			newTable, err := database.RebuildRoutingTable(context.Background(), db, lruCache)
+			if err != nil {
+				log.Printf("[RCU UPDATE ERROR] Failed to rebuild routing table: %v", err)
+				return
 			}
-		case events.EventServiceCreated:
-			var s admin.Service
-			if err := json.Unmarshal(event.Payload, &s); err != nil {
-				upstream, err := proxy.NewUpstream(s.URL, lruCache)
-				if err == nil {
-					pool.Ring.AddUpstream(upstream)
-					log.Printf("[CLUSTER SYNC] Upstream service '%s' (%s) added to Hash Ring", s.Name, s.URL)
-				}
-			}
+
+			atomicRouter.Swap(newTable)
+			log.Println("[RCU UPDATE Atomically swapped to new active routing table")
 		case events.EventAPIKeyCreated:
 			var res admin.CreateAPIKeyResponse
 			if err := json.Unmarshal(event.Payload, &res); err == nil {
@@ -142,9 +146,30 @@ func main() {
 	rootMux.Handle("/", finalHandler)
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	log.Printf("Nexus gateway listening on %s...", addr)
-
-	if err := http.ListenAndServe(addr, rootMux); err != nil {
-		log.Fatalf("Server error: %v", err)
+	server := &http.Server{
+		Addr: addr,
+		Handler: rootMux,
 	}
+
+	stopChan := make(chan os.Signal, 1)
+	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
+
+	go func(){
+		log.Printf("Nexus gateway listening on %s...", addr)
+		if err := http.ListenAndServe(addr, rootMux); err != nil {
+			log.Fatalf("Server error: %v", err)
+		}
+	}()
+
+	<-stopChan
+	log.Println("[SHUTDOWN] Signal received. Draining active connections...")
+
+	ctxShutdown, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctxShutdown); err != nil {
+		log.Fatalf("[SHUTDOWN ERROR] Forced shutdown: %v", err)
+	}
+
+	log.Println("[SHUTDOWN] All active connections drained successfully. Gateway stopped")
 }

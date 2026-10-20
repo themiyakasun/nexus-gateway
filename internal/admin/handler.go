@@ -72,7 +72,7 @@ func (h *Handler) handleCreateService(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.broadcaster != nil {
-		_ = h.broadcaster.Publish(r.Context(), events.EventAPIKeyCreated, service)
+		_ = h.broadcaster.Publish(r.Context(), events.EventServiceCreated, service)
 	}
 
 	respondJSON(w, http.StatusCreated, service)
@@ -216,7 +216,7 @@ func (h *Handler) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	if h.broadcaster != nil {
 		_ = h.broadcaster.Publish(r.Context(), events.EventAPIKeyCreated, err)
 	}
-	
+
 	respondJSON(w, http.StatusCreated, res)
 }
 func (h *Handler) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
