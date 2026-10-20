@@ -4,14 +4,17 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+
+	"github.com/themiyakasun/nexus-gateway/internal/events"
 )
 
 type Handler struct {
 	repo *Repository
+	broadcaster *events.Broadcaster
 }
 
-func NewHandler(repo *Repository) *Handler {
-	return &Handler{repo: repo}
+func NewHandler(repo *Repository, broardcaster *events.Broadcaster) *Handler {
+	return &Handler{repo: repo, broadcaster: broardcaster}
 }
 
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
@@ -25,6 +28,16 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/routes", h.handleCreateRoute)
 	mux.HandleFunc("GET /admin/routes", h.handleListRoutes)
 	mux.HandleFunc("DELETE /admin/routes/{id}", h.handleDeleteRoute)
+
+ // Organizations CRUD
+	mux.HandleFunc("POST /admin/organizations", h.handleCreateOrg)
+	mux.HandleFunc("GET /admin/organizations", h.handleListOrgs)
+
+	// API Keys CRUD
+	mux.HandleFunc("POST /admin/api-keys", h.handleCreateAPIKey)
+	mux.HandleFunc("GET /admin/api-keys", h.handleListAPIKeys)
+	mux.HandleFunc("DELETE /admin/api-keys/{id}", h.handleRevokeAPIKey)
+
 }
 
 func respondJSON(w http.ResponseWriter, status int, data any) {
@@ -56,6 +69,10 @@ func (h *Handler) handleCreateService(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	if h.broadcaster != nil {
+		_ = h.broadcaster.Publish(r.Context(), events.EventAPIKeyCreated, service)
 	}
 
 	respondJSON(w, http.StatusCreated, service)
@@ -118,6 +135,11 @@ func (h *Handler) handleCreateRoute(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	if h.broadcaster != nil {
+		_ = h.broadcaster.Publish(r.Context(), events.EventRouteCreated, route)
+	}
+
 	respondJSON(w, http.StatusCreated, route)
 }
 func (h *Handler) handleListRoutes(w http.ResponseWriter, r *http.Request) {
@@ -143,4 +165,86 @@ func (h *Handler) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respondJSON(w, http.StatusOK, map[string]string{"message": "route deleted successfully"})
+}
+
+
+func (h *Handler) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
+	var req CreateOrgRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Name == "" || req.Slug == "" {
+		respondError(w, http.StatusBadRequest, "name and slug are required")
+		return
+	}
+	org, err := h.repo.CreateOrganization(r.Context(), req)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusCreated, org)
+}
+func (h *Handler) handleListOrgs(w http.ResponseWriter, r *http.Request) {
+	orgs, err := h.repo.ListOrganizations(r.Context())
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if orgs == nil {
+		orgs = []Organization{}
+	}
+	respondJSON(w, http.StatusOK, orgs)
+}
+
+func (h *Handler) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
+	var req CreateAPIKeyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.OrganizationID == "" || req.Name == "" {
+		respondError(w, http.StatusBadRequest, "organization_id and name are required")
+		return
+	}
+	res, err := h.repo.CreateAPIKey(r.Context(), req)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if h.broadcaster != nil {
+		_ = h.broadcaster.Publish(r.Context(), events.EventAPIKeyCreated, err)
+	}
+	
+	respondJSON(w, http.StatusCreated, res)
+}
+func (h *Handler) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
+	orgID := r.URL.Query().Get("organization_id")
+	if orgID == "" {
+		respondError(w, http.StatusBadRequest, "organization_id query param is required")
+		return
+	}
+	keys, err := h.repo.ListAPIKeys(r.Context(), orgID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if keys == nil {
+		keys = []APIKey{}
+	}
+	respondJSON(w, http.StatusOK, keys)
+}
+func (h *Handler) handleRevokeAPIKey(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	err := h.repo.RevokeAPIKey(r.Context(), id)
+	if err == sql.ErrNoRows {
+		respondError(w, http.StatusNotFound, "api key not found")
+		return
+	}
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]string{"message": "api key revoked successfully"})
 }

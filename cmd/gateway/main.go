@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/themiyakasun/nexus-gateway/internal/admin"
 	"github.com/themiyakasun/nexus-gateway/internal/cache"
 	"github.com/themiyakasun/nexus-gateway/internal/database"
+	"github.com/themiyakasun/nexus-gateway/internal/events"
 	"github.com/themiyakasun/nexus-gateway/internal/filter"
 	"github.com/themiyakasun/nexus-gateway/internal/middleware"
 	"github.com/themiyakasun/nexus-gateway/internal/proxy"
@@ -99,8 +101,40 @@ func main() {
 	// Station 1: Gzip Compression on the outside
 	finalHandler := middleware.GzipMiddleware(hLocalRate)
 
+	boardcaster := events.NewBroadcaster(rdb)
+
 	adminRepo := admin.NewRepository(db)
-	adminHandler := admin.NewHandler(adminRepo)
+	adminHandler := admin.NewHandler(adminRepo, boardcaster)
+
+	events.StartSubscriber(context.Background(), rdb, func(event events.ConfigEvent) {
+		log.Printf("[CLUSTER SYNC] Received event: %s at %s", event.Type, event.Timestamp.Format(time.RFC3339))
+
+		switch event.Type {
+		case events.EventRouteCreated:
+			var rt admin.Route
+			if err := json.Unmarshal(event.Payload, &rt); err != nil {
+				validRoutes.Add(rt.PathPrefix)
+				log.Printf("[CLUSTER SYNC] Route '%s' added to in-memory Bloom Filter", rt.PathPrefix)
+			}
+		case events.EventServiceCreated:
+			var s admin.Service
+			if err := json.Unmarshal(event.Payload, &s); err != nil {
+				upstream, err := proxy.NewUpstream(s.URL, lruCache)
+				if err == nil {
+					pool.Ring.AddUpstream(upstream)
+					log.Printf("[CLUSTER SYNC] Upstream service '%s' (%s) added to Hash Ring", s.Name, s.URL)
+				}
+			}
+		case events.EventAPIKeyCreated:
+			var res admin.CreateAPIKeyResponse
+			if err := json.Unmarshal(event.Payload, &res); err == nil {
+				rdb.SAdd(context.Background(), "valid_api_keys", res.RawKey)
+				log.Printf("[CLUSTER SYNC] API Key '%s' (%s) activated in Redis", res.APIKey.Name, res.APIKey.KeyPrefix)
+			}
+		}
+
+
+	})
 
 	rootMux := http.NewServeMux()
 	adminHandler.RegisterRoutes(rootMux)
