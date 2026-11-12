@@ -95,7 +95,18 @@ func main() {
 
 	go pool.StartHealthCheck(5 * time.Second)
 
-	hRouteCheck := middleware.BloomFilterMiddleware(validRoutes, pool)
+	dynamicHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		currentTable := atomicRouter.Get()
+		if route, ok := currentTable.Match(r.URL.Path); ok && route.Pool != nil {
+			route.Pool.ServeHTTP(w, r)
+			return
+		}
+		// Fallback to default pool if no dynamic route matched
+		pool.ServeHTTP(w, r)
+	})
+
+
+	hRouteCheck := middleware.BloomFilterMiddleware(validRoutes, dynamicHandler)
 	// Station 3: Redis Set API Key Auth (Validates X-API-Key & Bearer against Redis)
 	hAPIKey := middleware.RedisAPIKeyMiddleware(rdb, "valid_api_keys", hRouteCheck)
 
@@ -154,9 +165,9 @@ func main() {
 	stopChan := make(chan os.Signal, 1)
 	signal.Notify(stopChan, os.Interrupt, syscall.SIGTERM)
 
-	go func(){
+	go func() {
 		log.Printf("Nexus gateway listening on %s...", addr)
-		if err := http.ListenAndServe(addr, rootMux); err != nil {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server error: %v", err)
 		}
 	}()
